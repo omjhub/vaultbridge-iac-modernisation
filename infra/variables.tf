@@ -105,3 +105,10 @@ variable "db_password" {
     error_message = "db_password must be at least 12 characters. CBN compliance requirements mandate strong credential policies for financial services databases."
   }
 }
+
+
+variable "ec2_public_key" {
+  description = "SSH public key for EC2 instance access. Passed via CI/CD pipeline secret or terraform.tfvars locally."
+  type        = string
+  sensitive   = true
+}

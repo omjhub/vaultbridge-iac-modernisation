@@ -46,7 +46,7 @@ data "aws_ami" "amazon_linux_2023" {
 
 resource "aws_key_pair" "vaultbridge" {
   key_name   = "vaultbridge-key"
-  public_key = file("~/.ssh/id_ed25519.pub")
+  public_key = var.ec2_public_key
 
   tags = {
     Name = "vaultbridge-key"

@@ -157,6 +157,7 @@ jobs:
           my_ip_cidr   = "${{ secrets.MY_IP_CIDR }}"
           db_username  = "${{ secrets.DB_USERNAME }}"
           db_password  = "${{ secrets.DB_PASSWORD }}"
+          ec2_public_key = "${{ secrets.EC2_PUBLIC_KEY }}"
           TFVARS
         working-directory: ${{ env.WORKING_DIR }}
 
@@ -228,6 +229,7 @@ jobs:
           my_ip_cidr   = "${{ secrets.MY_IP_CIDR }}"
           db_username  = "${{ secrets.DB_USERNAME }}"
           db_password  = "${{ secrets.DB_PASSWORD }}"
+          ec2_public_key = "${{ secrets.EC2_PUBLIC_KEY }}"
           TFVARS
         working-directory: ${{ env.WORKING_DIR }}
 
