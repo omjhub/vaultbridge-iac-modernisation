@@ -64,15 +64,18 @@ resource "aws_instance" "app_server" {
   vpc_security_group_ids = [aws_security_group.ec2.id]
   key_name               = aws_key_pair.vaultbridge.key_name
 
-  # User data — runs on first boot only
-  # Installs PostgreSQL 15 client for database connectivity
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
   user_data = <<-EOF
     #!/bin/bash
     yum update -y
     yum install -y postgresql15
   EOF
 
-  # Root volume — encrypted gp3 SSD storage
   root_block_device {
     volume_type           = "gp3"
     volume_size           = 30
@@ -82,6 +85,22 @@ resource "aws_instance" "app_server" {
     tags = {
       Name = "vaultbridge-app-server-root"
     }
+  }
+
+  # ── Lifecycle Controls ──────────────────────────────────────
+  # ignore_changes on ami:
+  #   Prevents automatic instance replacement when AWS releases
+  #   a newer Amazon Linux 2023 AMI. Without this, every new AMI
+  #   release causes terraform plan to show an instance replacement.
+  #   AMI updates should be deliberate decisions via a planned
+  #   patching cycle — not automatic consequences of a data source.
+  #
+  # ignore_changes on user_data:
+  #   Prevents replacement if user_data content is updated.
+  #   user_data only runs on first boot, so changing it without
+  #   this block would destroy and recreate the instance.
+  lifecycle {
+    ignore_changes = [ami, user_data]
   }
 
   tags = {
