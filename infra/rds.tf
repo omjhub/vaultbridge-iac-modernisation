@@ -75,10 +75,10 @@ resource "aws_db_instance" "vaultbridge" {
   identifier = "vaultbridge-postgres"
 
   # Engine configuration
-  engine         = "postgres"
-  engine_version = "15.18"
-  instance_class = "db.t3.micro"
-  auto_minor_version_upgrade = true  # AWS applies PostgreSQL security patches automatically
+  engine                     = "postgres"
+  engine_version             = "15.18"
+  instance_class             = "db.t3.micro"
+  auto_minor_version_upgrade = true # AWS applies PostgreSQL security patches automatically
 
   # Storage configuration
   allocated_storage     = 20
