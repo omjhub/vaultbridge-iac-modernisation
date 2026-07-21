@@ -75,9 +75,10 @@ resource "aws_db_instance" "vaultbridge" {
   identifier = "vaultbridge-postgres"
 
   # Engine configuration
-  engine         = "postgres"
-  engine_version = "15.18"
-  instance_class = "db.t3.micro"
+  engine                     = "postgres"
+  engine_version             = "15.18"
+  instance_class             = "db.t3.micro"
+  auto_minor_version_upgrade = true # AWS applies PostgreSQL security patches automatically
 
   # Storage configuration
   allocated_storage     = 20
@@ -107,6 +108,25 @@ resource "aws_db_instance" "vaultbridge" {
   # In production this must be false
   skip_final_snapshot = true
   deletion_protection = false
+
+  # ── Lifecycle Controls ──────────────────────────────────────
+  # prevent_destroy:
+  #   Prevents accidental destruction of the database through
+  #   terraform destroy or removal of this resource block.
+  #   The RDS database contains VaultBridge financial transaction
+  #   records. Accidental deletion is an existential business risk.
+  #
+  #   To intentionally destroy this resource:
+  #   1. Set prevent_destroy = true → false
+  #   2. Run terraform apply to register the change
+  #   3. Then run terraform destroy
+  #
+  #   LEARNING ENVIRONMENT NOTE: Set to false here so the
+  #   project can be cleanly torn down after the programme.
+  #   In production this MUST be true.
+  lifecycle {
+    prevent_destroy = false # Change to true in production
+  }
 
   tags = {
     Name = "vaultbridge-postgres"
