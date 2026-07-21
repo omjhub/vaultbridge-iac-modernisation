@@ -8,7 +8,7 @@
 
 terraform {
   backend "s3" {
-    bucket  = "vaultbridge-terraform-state-301a163d"
+    bucket  = "vaultbridge-terraform-state-5c5428f5"
     key     = "envs/dev/terraform.tfstate"
     region  = "eu-west-1"
     encrypt = true

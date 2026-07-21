@@ -1,0 +1,240 @@
+# ============================================================
+# VaultBridge Infrastructure CI/CD Pipeline
+# GitHub Actions Workflow — Terraform Only
+#
+# On Pull Request → main:
+#   Runs format check, validate, tfsec, Checkov, and plan
+#   Posts plan output as a PR comment
+#   Blocks merge if any check fails
+#
+# On Push → main (after merge):
+#   Runs validate + apply automatically
+#
+# Credentials: AWS keys stored as GitHub Secrets.
+# Production upgrade: replace with OIDC/IAM Role federation
+# to eliminate long-lived credentials from CI/CD entirely.
+# ============================================================
+
+name: "VaultBridge Infrastructure Pipeline"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  TF_VERSION: "1.15.7"
+  AWS_REGION: "eu-west-1"
+  WORKING_DIR: "infra"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ──────────────────────────────────────────────────────────
+  # JOB 1 — FORMAT CHECK
+  # Fails immediately if any .tf file is not canonically
+  # formatted. Enforces consistent style across the team.
+  # ──────────────────────────────────────────────────────────
+  fmt:
+    name: "1 · Format Check"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt --check
+        run: terraform fmt -check -recursive
+        working-directory: ${{ env.WORKING_DIR }}
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2 — VALIDATE
+  # Checks syntax and internal consistency of .tf files.
+  # Does not connect to AWS.
+  # ──────────────────────────────────────────────────────────
+  validate:
+    name: "2 · Validate"
+    runs-on: ubuntu-latest
+    needs: fmt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: terraform init
+        run: terraform init
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: terraform validate
+        run: terraform validate -no-color
+        working-directory: ${{ env.WORKING_DIR }}
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3 — SECURITY SCANNING
+  # Runs tfsec and Checkov static analysis.
+  # Both must pass before plan or apply can run.
+  # soft_fail: true here so findings are reported as warnings
+  # rather than blocking the pipeline during learning phase.
+  # Set soft_fail: false in production to enforce blocking.
+  # ──────────────────────────────────────────────────────────
+  security:
+    name: "3 · Security Scan"
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: ${{ env.WORKING_DIR }}
+          minimum_severity: MEDIUM
+          soft_fail: true # Set to false in production
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ${{ env.WORKING_DIR }}
+          framework: terraform
+          soft_fail: true # Set to false in production
+          output_format: cli
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 4 — PLAN (Pull Requests Only)
+  # Generates terraform plan and posts it as a PR comment.
+  # Reviewers can see exactly what will change before approving.
+  # This is the CBN audit evidence — plan reviewed before apply.
+  # ──────────────────────────────────────────────────────────
+  plan:
+    name: "4 · Plan"
+    runs-on: ubuntu-latest
+    needs: security
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create terraform.tfvars
+        run: |
+          cat > terraform.tfvars << 'TFVARS'
+          aws_region   = "eu-west-1"
+          my_ip_cidr   = "${{ secrets.MY_IP_CIDR }}"
+          db_username  = "${{ secrets.DB_USERNAME }}"
+          db_password  = "${{ secrets.DB_PASSWORD }}"
+          TFVARS
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: terraform init
+        run: terraform init
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: terraform plan
+        id: plan
+        run: terraform plan -no-color 2>&1 | tee /tmp/plan.txt
+        working-directory: ${{ env.WORKING_DIR }}
+        continue-on-error: true
+
+      - name: Post Plan as PR Comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('/tmp/plan.txt', 'utf8');
+            const maxLen = 60000;
+            const output = plan.length > maxLen
+              ? plan.slice(0, maxLen) + '\n\n... output truncated ...'
+              : plan;
+            const status = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              body: `## ${status} Terraform Plan\n\n<details><summary>Click to expand plan output</summary>\n\n\`\`\`terraform\n${output}\n\`\`\`\n</details>`
+            });
+
+      - name: Check Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 5 — APPLY (Main Branch Only)
+  # Runs automatically when a PR is merged to main.
+  # This enforces the reviewed-plan-then-apply workflow:
+  # the plan was reviewed in the PR, now it is applied.
+  # ──────────────────────────────────────────────────────────
+  apply:
+    name: "5 · Apply"
+    runs-on: ubuntu-latest
+    needs: security
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform ${{ env.TF_VERSION }}
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create terraform.tfvars
+        run: |
+          cat > terraform.tfvars << 'TFVARS'
+          aws_region   = "eu-west-1"
+          my_ip_cidr   = "${{ secrets.MY_IP_CIDR }}"
+          db_username  = "${{ secrets.DB_USERNAME }}"
+          db_password  = "${{ secrets.DB_PASSWORD }}"
+          TFVARS
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: terraform init
+        run: terraform init
+        working-directory: ${{ env.WORKING_DIR }}
+
+      - name: terraform apply
+        run: terraform apply -auto-approve -no-color
+        working-directory: ${{ env.WORKING_DIR }}
