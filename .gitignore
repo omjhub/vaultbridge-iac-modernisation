@@ -13,3 +13,5 @@ terraform.tfvars
 
 # Mac system files
 .DS_Store
+checkov-results.json
+tfsec-results.json
