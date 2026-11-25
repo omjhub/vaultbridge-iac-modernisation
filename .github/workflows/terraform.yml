@@ -94,7 +94,7 @@ jobs:
   # Runs tfsec and Checkov static analysis.
   # Both must pass before plan or apply can run.
   # soft_fail: true here so findings are reported as warnings
-  # rather than blocking the pipeline during learning phase.
+  # rather than blocking the pipeline while each finding is triaged.
   # Set soft_fail: false in production to enforce blocking.
   # ──────────────────────────────────────────────────────────
   security:
