@@ -104,7 +104,7 @@ resource "aws_db_instance" "vaultbridge" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  # For this learning exercise only — skip final snapshot on destroy
+  # Demo environment: skip final snapshot so it can be torn down
   # In production this must be false
   skip_final_snapshot = true
   deletion_protection = false
@@ -121,8 +121,8 @@ resource "aws_db_instance" "vaultbridge" {
   #   2. Run terraform apply to register the change
   #   3. Then run terraform destroy
   #
-  #   LEARNING ENVIRONMENT NOTE: Set to false here so the
-  #   project can be cleanly torn down after the programme.
+  #   DEMO ENVIRONMENT NOTE: Set to false here so the
+  #   environment can be cleanly torn down after validation.
   #   In production this MUST be true.
   lifecycle {
     prevent_destroy = false # Change to true in production
