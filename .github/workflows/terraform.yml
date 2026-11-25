@@ -20,8 +20,14 @@ name: "VaultBridge Infrastructure Pipeline"
 on:
   push:
     branches: ["main"]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
   pull_request:
     branches: ["main"]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
 
 env:
   TF_VERSION: "1.15.7"
